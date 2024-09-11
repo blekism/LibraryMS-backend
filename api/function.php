@@ -3,7 +3,109 @@
 require '../inc/dbcon.php';
 require '../vendor/autoload.php';
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception;
 use WebSocket\Client;
+
+
+
+function verifyAccount($userInput)
+{
+    global $con;
+
+    if (isset($userInput['verification_code'])) {
+        $verifyCode = mysqli_real_escape_string($con, $userInput['verification_code']);
+        $query = "UPDATE library_members_tbl SET verified_at = NOW() WHERE verification_code = '$verifyCode' ";
+        $result = mysqli_query($con, $query);
+
+        if ($result) {
+            $data = [
+                'status' => 200,
+                'message' => 'Account Verified',
+            ];
+            header("HTTP/1.0 200 Verified");
+            return json_encode($data);
+        }
+    } else {
+        return error422('Enter Verification Code');
+    }
+}
+
+function phpMailer($userInput)
+{
+    global $con;
+
+    if (isset($userInput['email']) && isset($userInput['password'])) {
+        $email = mysqli_real_escape_string($con, $userInput['email']);
+        $password = mysqli_real_escape_string($con, $userInput['password']);
+        $last_name = mysqli_real_escape_string($con, $userInput['last_name']);
+        $first_name = mysqli_real_escape_string($con, $userInput['first_name']);
+        $mail = new PHPMailer(true);
+
+        try {
+            //Server settings
+            $mail->SMTPDebug = SMTP::DEBUG_SERVER;                      //Enable verbose debug output
+            $mail->isSMTP();                                            //Send using SMTP
+            $mail->Host       = 'smtp.gmail.com';                     //Set the SMTP server to send through
+            $mail->SMTPAuth   = true;                                   //Enable SMTP authentication
+            $mail->Username   = 'cristianlaviano@gmail.com';                     //SMTP username
+            $mail->Password   = 'cyog eepg pnqa nziy';                               //SMTP password
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;            //Enable implicit TLS encryption
+            $mail->Port       = 465;                                    //TCP port to connect to; use 587 if you have set `SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS`
+
+            //Recipients
+            $mail->setFrom('cristianlaviano@gmail.com', 'Mailer');
+            $mail->addAddress($email);
+            $verificationCode = substr(number_format(time() * rand(), 0, '', ''), 0, 6);     //Add a recipient
+
+
+            //Content
+            $mail->isHTML(true);                                  //Set email format to HTML
+            $mail->Subject = 'Verification code';
+            $mail->Body    = 'Your verification code is: ' . $verificationCode;
+            $mail->AltBody = 'Your verification code is: ' . $verificationCode;
+
+            $mail->send();
+            echo 'Message has been sent';
+
+            $query = "INSERT INTO 
+            library_members_tbl(
+                first_name, 
+                last_name, 
+                email, 
+                password, 
+                verification_code) 
+            VALUES (
+                '$first_name',
+                '$last_name',
+                '$email', 
+                '$password', 
+                '$verificationCode')";
+            $result = mysqli_query($con, $query);
+
+            if ($result) {
+                $data = [
+                    'status' => 201,
+                    'message' => 'Email Added',
+                ];
+                header("HTTP/1.0 201 Inserted");
+                return json_encode($data);
+            } else {
+                $data = [
+                    'status' => 500,
+                    'message' => 'Internal Server Error',
+                ];
+                header("HTTP/1.0 500 Internal Server Error");
+                return json_encode($data);
+            }
+        } catch (Exception $e) {
+            echo "Message could not be sent. Mailer Error: {$mail->ErrorInfo}";
+        }
+    } else {
+        return error422('Enter Email and Password');
+    }
+}
 
 function error422($message)
 {
@@ -119,11 +221,24 @@ function userLogin($userParams)
     if ($result) {
         if (mysqli_num_rows($result) == 1) {
             $row = mysqli_fetch_assoc($result);
-            $data = [
-                'status' => 200,
-                'message' => 'Login successful',
-                'data' => $row,
-            ];
+
+            $accountStatus = mysqli_real_escape_string($con, $row['verified_at']);
+            if ($accountStatus == null) {
+                $data = [
+                    'status' => 403,
+                    'message' => 'Account not verified',
+                ];
+                header("HTTP/1.0 403 Forbidden");
+                return json_encode($data);
+            } else {
+                $data = [
+                    'status' => 200,
+                    'message' => 'Login successful',
+                    'data' => $row,
+                ];
+            }
+
+
             header("HTTP/1.0 200 Login Successful");
             return json_encode($data);
         } else {
