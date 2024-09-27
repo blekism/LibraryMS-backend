@@ -45,6 +45,81 @@ function error422($message)
     exit();
 }
 
+function phpMailer($userInput)
+{
+    global $con;
+
+    if (isset($userInput['email']) && isset($userInput['password'])) {
+        $email = mysqli_real_escape_string($con, $userInput['email']);
+        $password = mysqli_real_escape_string($con, $userInput['password']);
+        $last_name = mysqli_real_escape_string($con, $userInput['last_name']);
+        $first_name = mysqli_real_escape_string($con, $userInput['first_name']);
+        $mail = new PHPMailer(true);
+
+        try {
+            //Server settings
+            $mail->SMTPDebug = SMTP::DEBUG_SERVER;                      //Enable verbose debug output
+            $mail->isSMTP();                                            //Send using SMTP
+            $mail->Host       = 'smtp.gmail.com';                     //Set the SMTP server to send through
+            $mail->SMTPAuth   = true;                                   //Enable SMTP authentication
+            $mail->Username   = 'cristianlaviano@gmail.com';                     //SMTP username
+            $mail->Password   = 'cyog eepg pnqa nziy';                               //SMTP password
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;            //Enable implicit TLS encryption
+            $mail->Port       = 465;                                    //TCP port to connect to; use 587 if you have set `SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS`
+
+            //Recipients
+            $mail->setFrom('cristianlaviano@gmail.com', 'Mailer');
+            $mail->addAddress($email);
+            $verificationCode = substr(number_format(time() * rand(), 0, '', ''), 0, 6);     //Add a recipient
+
+
+            //Content
+            $mail->isHTML(true);                                  //Set email format to HTML
+            $mail->Subject = 'Verification code';
+            $mail->Body    = 'Your verification code is: ' . $verificationCode;
+            $mail->AltBody = 'Your verification code is: ' . $verificationCode;
+
+            $mail->send();
+            echo 'Message has been sent';
+
+            $query = "INSERT INTO 
+            library_members_tbl(
+                first_name, 
+                last_name, 
+                email, 
+                password, 
+                verification_code) 
+            VALUES (
+                '$first_name',
+                '$last_name',
+                '$email', 
+                '$password', 
+                '$verificationCode')";
+            $result = mysqli_query($con, $query);
+
+            if ($result) {
+                $data = [
+                    'status' => 201,
+                    'message' => 'Email Added',
+                ];
+                header("HTTP/1.0 201 Inserted");
+                return json_encode($data);
+            } else {
+                $data = [
+                    'status' => 500,
+                    'message' => 'Internal Server Error',
+                ];
+                header("HTTP/1.0 500 Internal Server Error");
+                return json_encode($data);
+            }
+        } catch (Exception $e) {
+            echo "Message could not be sent. Mailer Error: {$mail->ErrorInfo}";
+        }
+    } else {
+        return error422('Enter Email and Password');
+    }
+}
+
 function loop($loopInput)
 {
     global $con;
